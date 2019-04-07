@@ -49,7 +49,7 @@ class student_recs(Resource):
                 for c in cu:
                     for course in courses:
                         if float(c) == float(course.get_id()):
-                            y.append(str(course.get_f_alias()) + " " + str(course.get_name()) + " " + str(course.get_course_quality())
+                            y.append(str(course.get_aliases()) + " " + str(course.get_name()) + " " + str(course.get_course_quality())
                                      + " " + str(course.get_difficulty()) + " " + str(course.get_instructor_quality())
                                      + " " + str(course.get_desc()))
                 z[x['sid']] = y
