@@ -1,6 +1,9 @@
 import numpy as np
-from scipy.optimize import nnls
 import csv
+from scipy.optimize import nnls
+from pymongo import MongoClient
+client = MongoClient('mongodb://pcr_group:pcr123@ds137862.mlab.com:37862/pcr')
+
 
 """CLASSES"""
 
@@ -12,8 +15,9 @@ done on a 1-5 scale
 
 
 class Course(object):
-    def __init__(self, name, id, aliases, ratings):
+    def __init__(self, name, desc, id, aliases, ratings):
         self.name = name
+        self.desc = desc
         self.id = id
         self.aliases = aliases
         self.courseQuality = float(ratings[0])
@@ -37,13 +41,20 @@ class Course(object):
         return self.name + ": " + str(self.id)
 
     def get_name(self):
-        return self.name
+            return self.name
 
     def get_id(self):
         return self.id
 
+
+    def get_desc(self):
+        return self.desc
+
     def get_aliases(self):
         return self.aliases
+
+    def get_f_alias(self):
+        return self.aliases.split(' -- ')[0].replace('[', '').replace(']', '')
 
     def get_course_quality(self):
         return self.courseQuality
@@ -209,27 +220,19 @@ class Student(object):
                     self.majRating.append([self.id, item, self.ratings[rating][5]])
                     self.nonMajRating.append([self.id, item, self.ratings[rating][6]])
 
+
     def __str__(self):
         return str(self.id) + " " + str(self.ratings) + " " + str(self.courseRating)
 
 
 """COURSE PARSING"""
 
-course_list = [i.strip().split("\t\t") for i in open('./neo4jCourses.csv').readlines()]
-course_list = course_list[1:]
-
 # list of all courses in graph
 courses = []
 
-# create maps of course names to ids and vice versa
-for i in course_list:
-    for j in i:
-        arr = j.split(',')
-        aset = arr[5]
-        aset = aset[1:len(aset) - 1]
-        aliases = aset.split(' -- ')
-        ratings = arr[6:14]
-        courses.append(Course(arr[0],arr[2], aliases, ratings))
+cs = client.pcr.courses
+for x in cs.find():
+    courses.append(Course(x['name'], x['description'],x['cid'], x['aliases'], [ x['courseQuality'], x['professorQuality'], x['difficulty'], x['amountLearned'], x['workRequired'], x['RecommendToMajor'], x['RecommendToNonMajor'], x['numberReviewers']]))
 
 # map of course ids to their aliases
 idAliasMap = {}
@@ -239,60 +242,38 @@ for c in courses:
 
 """SURVEY PARSING"""
 
-responses = [i.strip().split("\t\t") for i in open('./responses.csv').readlines()]
-responses = responses[1:]
-
 # list of all students to build SVD matrix
 students = []
 
+def fill_students():
+    rs = client.pcr.responses
+    client.pcr.students.drop()
+    st = client.pcr.students
+    for x in rs.find():
+        course1 = x['Course 1 Name']
+        course1R = [x['Course 1 Evaluation [Course Quality]'], x['Course 1 Evaluation [Instructor Quality]'], x['Course 1 Evaluation [Difficulty]'], x['Course 1 Evaluation [Work Required]'], x['Course 1 Evaluation [Amount Learned]'], x['Course 1 Evaluation [Would recommend to someone in major]'], x['Course 1 Evaluation [Would recommend to someone not in major]']]
+        course2 = x['Course 2 Name']
+        course2R = [x['Course 2 Evaluation [Course Quality]'], x['Course 2 Evaluation [Instructor Quality]'], x['Course 2 Evaluation [Difficulty]'], x['Course 2 Evaluation [Work Required]'], x['Course 2 Evaluation [Amount Learned]'], x['Course 2 Evaluation [Would recommend to someone in major]'], x['Course 2 Evaluation [Would recommend to someone not in major]']]
+        course3 = x['Course 3 Name']
+        course3R = [x['Course 3 Evaluation [Course Quality]'], x['Course 3 Evaluation [Instructor Quality]'], x['Course 3 Evaluation [Difficulty]'], x['Course 3 Evaluation [Work Required]'], x['Course 3 Evaluation [Amount Learned]'], x['Course 3 Evaluation [Would recommend to someone in major]'], x['Course 3 Evaluation [Would recommend to someone not in major]']]
+        course4 = x['Course 4 Name']
+        course4R = [x['Course 4 Evaluation [Course Quality]'], x['Course 4 Evaluation [Instructor Quality]'], x['Course 4 Evaluation [Difficulty]'], x['Course 4 Evaluation [Work Required]'], x['Course 4 Evaluation [Amount Learned]'], x['Course 4 Evaluation [Would recommend to someone in major]'], x['Course 4 Evaluation [Would recommend to someone not in major]']]
+        course5 = x['Course 5 Name']
+        course5R = [x['Course 5 Evaluation [Course Quality]'], x['Course 5 Evaluation [Instructor Quality]'], x['Course 5 Evaluation [Difficulty]'], x['Course 5 Evaluation [Work Required]'], x['Course 5 Evaluation [Amount Learned]'], x['Course 5 Evaluation [Would recommend to someone in major]'], x['Course 5 Evaluation [Would recommend to someone not in major]']]
+        allCourses = {}
+        allCourses[course1] = course1R
+        allCourses[course2] = course2R
+        allCourses[course3] = course3R
+        allCourses[course4] = course4R
+        allCourses[course5] = course5R
+        s = Student(x['sid'], allCourses)
+        s.match_ratings_to_courses(idAliasMap)
+        students.append(s)
+        s_data = {
+            'sid': x['sid'],
+        }
+        st.insert_one(s_data)
 
-for i in range(len(responses)):
-    info = responses[i][0].split(",")
-    allCourses = {}
-    course1 = info[2].replace(" ", "-").upper()
-    course2 = info[10].replace(" ", "-").upper()
-    course3 = info[18].replace(" ", "-").upper()
-    course4 = info[26].replace(" ", "-").upper()
-    course5 = info[34].replace(" ", "-").upper()
-    if '-' not in course1:
-        course1 = course1[0:len(course1)-3] + "-" + course1[len(course1) - 3:]
-    if '-' not in course2:
-        course2 = course2[0:len(course2)-3] + "-" + course2[len(course2) - 3:]
-    if '-' not in course3:
-        course3 = course3[0:len(course3)-3] + "-" + course3[len(course3) - 3:]
-    if '-' not in course4:
-        course4 = course4[0:len(course4)-3] + "-" + course4[len(course4) - 3:]
-    if '-' not in course5:
-        course5 = course5[0:len(course5) - 3] + "-" + course5[len(course5) - 3:]
-    c1r = info[3:10]
-    c2r = info[11:18]
-    c3r = info[19:26]
-    c4r = info[27:34]
-    c5r = info[35:42]
-    allCourses[course1] = c1r
-    allCourses[course2] = c2r
-    allCourses[course3] = c3r
-    allCourses[course4] = c4r
-    allCourses[course5] = c5r
-    s = Student(i, allCourses)
-    s.match_ratings_to_courses(idAliasMap)
-    students.append(s)
-
-# with open('student_data.pkl', 'wb') as output:
-#     for s in students:
-#         pickle.dump(s, output, pickle.HIGHEST_PROTOCOL)
-#
-# students = []
-# def pickleLoader(pklFile):
-#     try:
-#         while True:
-#             yield pickle.load(pklFile)
-#     except EOFError:
-#         pass
-#
-# with open('student_data.pkl', 'rb') as input:
-#     for event in pickleLoader(input):
-#         students.append(event)
 
 
 """ CSV file writing for SVD recs"""
@@ -300,106 +281,148 @@ for i in range(len(responses)):
 
 # method to write rating files based on student input (google survey). Takes in student list (students)
 def write_rec_files_from_users(s):
-    with open('courseQualRating.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_course_rating():
-                    wrtr.writerow(li)
+    client.pcr.courseRating.drop()
+    client.pcr.profRating.drop()
+    client.pcr.diffRating.drop()
+    client.pcr.workRating.drop()
+    client.pcr.learnRating.drop()
+    client.pcr.majRating.drop()
+    client.pcr.nomRating.drop()
+    course_rating = client.pcr.courseRating
+    for student in s:
+        for li in student.get_course_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            course_rating.insert_one(s_data)
 
-    with open('profQualRating.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_instructor_rating():
-                    wrtr.writerow(li)
+    ins_rating = client.pcr.profRating
+    for student in s:
+        for li in student.get_instructor_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            ins_rating.insert_one(s_data)
 
-    with open('diffRating.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_diff_rating():
-                    wrtr.writerow(li)
+    diff_rating = client.pcr.diffRating
+    for student in s:
+        for li in student.get_diff_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            diff_rating.insert_one(s_data)
 
-    with open('workReqRating.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_work_required_rating():
-                    wrtr.writerow(li)
+    work_rating = client.pcr.workRating
+    for student in s:
+        for li in student.get_work_required_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            work_rating.insert_one(s_data)
 
-    with open('amtLearnedRating.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_amount_learned_rating():
-                    wrtr.writerow(li)
+    learn_rating = client.pcr.learnRating
+    for student in s:
+        for li in student.get_amount_learned_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            learn_rating.insert_one(s_data)
 
-    with open('recToMaj.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_maj_rating():
-                    wrtr.writerow(li)
-
-    with open('recToNonMaj.csv', 'w', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for student in s:
-            # if student.id == len(students):
-                for li in student.get_non_maj_rating():
-                    wrtr.writerow(li)
+    maj_rating = client.pcr.majRating
+    for student in s:
+        for li in student.get_maj_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            maj_rating.insert_one(s_data)
 
 
-# method to write rating files based on added student. Takes in student
-def write_rec_files_from_student(s):
-    with open('courseQualRating.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_course_rating():
-            wrtr.writerow(li)
+    nom_rating = client.pcr.nomRating
+    for student in s:
+        for li in student.get_non_maj_rating():
+            s_data = {
+                'user': li[0],
+                'course': li[1],
+                'rating': li[2]
+            }
+            nom_rating.insert_one(s_data)
 
-    with open('profQualRating.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_instructor_rating():
-            wrtr.writerow(li)
 
-    with open('diffRating.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_diff_rating():
-            wrtr.writerow(li)
+def write_rec_files_from_stud(s):
+    course_rating = client.pcr.courseRating
+    for li in s.get_course_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        course_rating.insert_one(s_data)
 
-    with open('workReqRating.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_work_required_rating():
-            wrtr.writerow(li)
+    ins_rating = client.pcr.profRating
+    for li in s.get_instructor_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        ins_rating.insert_one(s_data)
 
-    with open('amtLearnedRating.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_amount_learned_rating():
-            wrtr.writerow(li)
+    diff_rating = client.pcr.diffRating
+    for li in s.get_diff_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        diff_rating.insert_one(s_data)
 
-    with open('recToMaj.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_maj_rating():
-            wrtr.writerow(li)
+    work_rating = client.pcr.workRating
+    for li in s.get_work_required_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        work_rating.insert_one(s_data)
 
-    with open('recToNonMaj.csv', 'a', newline='') as csvfile:
-        wrtr = csv.writer(csvfile, delimiter='\t',
-                          quotechar='|', quoting=csv.QUOTE_MINIMAL)
-        for li in s.get_non_maj_rating():
-            wrtr.writerow(li)
+    learn_rating = client.pcr.learnRating
+    for li in s.get_amount_learned_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        learn_rating.insert_one(s_data)
+
+    maj_rating = client.pcr.majRating
+    for li in s.get_maj_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        maj_rating.insert_one(s_data)
+
+    nom_rating = client.pcr.nomRating
+    for li in s.get_non_maj_rating():
+        s_data = {
+            'user': li[0],
+            'course': li[1],
+            'rating': li[2]
+        }
+        nom_rating.insert_one(s_data)
 
 
 # method to write rating files based on normal distributions. Takes in master course list (courses)
@@ -430,5 +453,3 @@ def write_rec_files_from_dist(c):
                         wrtr.writerow([stud, course.get_id(), li.index(num) + 1])
                         stud += 1
 
-
-write_rec_files_from_users(students)
