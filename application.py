@@ -11,7 +11,6 @@ from recs import courses
 application = Flask(__name__)
 api = Api(application)
 
-## TODO: add ability to take in user input and send back recs
 class student_recs(Resource):
     def get(self):
         args = request.args
@@ -49,9 +48,14 @@ class student_recs(Resource):
                 for c in cu:
                     for course in courses:
                         if float(c) == float(course.get_id()):
-                            y.append(str(course.get_aliases()) + " " + str(course.get_name()) + " " + str(course.get_course_quality())
-                                     + " " + str(course.get_difficulty()) + " " + str(course.get_instructor_quality())
-                                     + " " + str(course.get_desc()))
+                            obj = {}
+                            obj['code'] = str(course.get_aliases())
+                            obj['name'] = str(course.get_name())
+                            obj['courseQuality'] = str(course.get_course_quality())
+                            obj['difficulty'] = str(course.get_difficulty())
+                            obj['instructorQuality'] = str(course.get_instructor_quality())
+                            obj['description'] = str(course.get_desc())
+                            y.append(json.dumps(obj))
                 z[x['sid']] = y
         return json.dumps(z)
 
