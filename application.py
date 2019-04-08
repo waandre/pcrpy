@@ -63,5 +63,5 @@ class student_recs(Resource):
 api.add_resource(student_recs, '/getrecs') # Route_1
 
 if __name__ == '__main__':
-    # application.run()
-    application.run(port=5002)
+    application.run()
+    # application.run(port=5002)
